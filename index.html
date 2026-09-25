@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dead Signal: Exclusion Zone</title>
+    <meta name="description" content="A first-person extraction survival shooter set in a quarantined industrial district." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23111'/%3E%3Cpath d='M16 4 L28 26 H4 Z' fill='none' stroke='%23e8c35a' stroke-width='3'/%3E%3Ccircle cx='16' cy='20' r='2.5' fill='%23e8c35a'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <!-- Loading -->
+    <div id="loading" class="screen">
+      <div class="load-inner">
+        <div class="brand-small">DEAD SIGNAL</div>
+        <div class="load-bar"><div id="load-fill"></div></div>
+        <div id="load-text">ESTABLISHING UPLINK…</div>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div id="error" class="screen hidden">
+      <div class="panel error-panel">
+        <h2>UNABLE TO DEPLOY</h2>
+        <p id="error-text"></p>
+      </div>
+    </div>
+
+    <!-- Title -->
+    <div id="title" class="screen hidden">
+      <div class="title-left">
+        <div class="title-kicker">JOINT TASK FORCE ARGUS · OPERATION BLACKWATER</div>
+        <h1 class="title-logo">DEAD SIGNAL</h1>
+        <div class="title-sub">EXCLUSION ZONE</div>
+        <p class="briefing">
+          The Halcyon outbreak has overrun District 9. Insert at Checkpoint 7, restore the depot uplink,
+          eliminate the escaped subject <b>WARDEN-9</b>, then signal <b>RAVEN 2-1</b> for extraction before the
+          contamination front reaches the landing zone.
+        </p>
+        <div class="menu-buttons">
+          <button id="btn-deploy" class="btn primary">DEPLOY</button>
+          <button id="btn-settings" class="btn">SETTINGS</button>
+        </div>
+        <div id="best-run" class="best-run"></div>
+      </div>
+      <div class="title-right">
+        <div class="controls-card">
+          <div class="card-head">CONTROLS</div>
+          <div class="controls-grid">
+            <span>WASD</span><span>Move</span>
+            <span>Mouse</span><span>Look</span>
+            <span>LMB / RMB</span><span>Fire / Aim</span>
+            <span>R</span><span>Reload</span>
+            <span>Shift</span><span>Sprint</span>
+            <span>Space / C</span><span>Jump / Crouch</span>
+            <span>E</span><span>Interact</span>
+            <span>1 / 2 · Wheel</span><span>Switch weapon</span>
+            <span>G</span><span>Frag grenade</span>
+            <span>Q</span><span>Apply armor plate</span>
+            <span>M</span><span>Tactical map</span>
+            <span>Esc</span><span>Pause</span>
+          </div>
+        </div>
+        <div class="controls-card">
+          <div class="card-head">MISSION</div>
+          <ol class="mission-steps">
+            <li>Activate the <b>Uplink Relay</b> at Kessler Depot and hold its zone.</li>
+            <li>Hunt <b>WARDEN-9</b> inside the Halcyon Compound.</li>
+            <li>Call exfil at the <b>LZ</b>, survive the horde, board the helicopter.</li>
+          </ol>
+          <div class="hint">Loot caches and kills earn Salvage. Spend it at Quartermaster stations and the Armory bench.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <div id="vignette-hit"></div>
+      <div class="hud-tl">
+        <div class="timer-row"><span id="timer-label">MISSION</span><span id="timer">15:00</span></div>
+        <div id="phase-banner" class="phase-banner hidden">CONTAMINATION SPREADING</div>
+        <div id="contracts"></div>
+      </div>
+      <div class="hud-tr">
+        <canvas id="minimap" width="200" height="200"></canvas>
+        <div class="region-row"><span id="region-name">CHECKPOINT DISTRICT</span><span id="region-threat" class="threat low">LOW THREAT</span></div>
+      </div>
+      <div id="boss" class="boss hidden">
+        <div class="boss-name">WARDEN-9 · ELITE INFECTED</div>
+        <div class="boss-bar"><div id="boss-fill"></div></div>
+      </div>
+      <div id="waypoints"></div>
+      <div id="crosshair">
+        <div class="ch t"></div><div class="ch b"></div><div class="ch l"></div><div class="ch r"></div><div class="ch dot"></div>
+      </div>
+      <div id="hitmarker"><div></div><div></div><div></div><div></div></div>
+      <div id="dmg-dirs"></div>
+      <div id="prompt" class="hidden"></div>
+      <div id="toasts"></div>
+      <div id="center-msg" class="hidden"></div>
+      <div id="stamina"><div id="stamina-fill"></div></div>
+      <div id="plate-bar" class="hidden"><div id="plate-fill"></div><span>APPLYING PLATE</span></div>
+      <div class="hud-bl">
+        <div class="salvage"><span class="salvage-icon">$</span><span id="cash">500</span><span id="cash-delta"></span></div>
+        <div class="armor-row" id="armor-row"><div class="seg"><i></i></div><div class="seg"><i></i></div><div class="seg"><i></i></div></div>
+        <div class="health-row"><div id="health-fill"></div><span id="health-num">100</span></div>
+        <div class="inv-row">
+          <span class="inv"><b id="plates">2</b> PLATES <kbd>Q</kbd></span>
+          <span class="inv"><b id="grenades">2</b> FRAG <kbd>G</kbd></span>
+        </div>
+      </div>
+      <div class="hud-br">
+        <div id="weapon-secondary" class="weapon-secondary"></div>
+        <div class="weapon-name"><span id="weapon-name">KR-7 KESTREL</span><span id="weapon-tier" class="tier"></span></div>
+        <div class="ammo"><span id="ammo-mag">30</span><span class="ammo-sep">/</span><span id="ammo-res">150</span></div>
+        <div id="reload-hint" class="reload-hint hidden">RELOAD <kbd>R</kbd></div>
+      </div>
+      <div id="station" class="station hidden">
+        <div class="station-head" id="station-title">QUARTERMASTER</div>
+        <div id="station-items"></div>
+        <div class="station-foot">Press the number key to buy · <kbd>E</kbd> close</div>
+      </div>
+      <div id="controls-hint" class="controls-hint">
+        <div><kbd>WASD</kbd> move <kbd>Shift</kbd> sprint <kbd>C</kbd> crouch <kbd>Space</kbd> jump</div>
+        <div><kbd>LMB</kbd> fire <kbd>RMB</kbd> aim <kbd>R</kbd> reload <kbd>1</kbd>/<kbd>2</kbd> switch</div>
+        <div><kbd>E</kbd> interact <kbd>G</kbd> grenade <kbd>Q</kbd> plate <kbd>M</kbd> map <kbd>Esc</kbd> pause</div>
+      </div>
+      <div id="fps" class="hidden"></div>
+    </div>
+
+    <!-- Tactical map -->
+    <div id="tacmap" class="hidden">
+      <div class="tacmap-head">
+        <span>TACTICAL MAP · DISTRICT 9</span>
+        <span class="legend"><i class="lg l"></i>LOW <i class="lg m"></i>MEDIUM <i class="lg h"></i>HIGH <i class="lg c"></i>CONTAMINATION</span>
+        <span class="legend"><b class="k buy">$</b> Quartermaster <b class="k up">U</b> Armory <b class="k ct">D</b> Uplink <b class="k lz">H</b> Exfil <b class="k cr"></b> Cache</span>
+      </div>
+      <canvas id="tacmap-canvas"></canvas>
+      <div class="tacmap-foot">Press <kbd>M</kbd> to close</div>
+    </div>
+
+    <!-- Pause -->
+    <div id="pause" class="screen hidden">
+      <div class="panel pause-panel">
+        <div class="panel-head">PAUSED</div>
+        <div class="menu-buttons vertical">
+          <button id="btn-resume" class="btn primary">RESUME</button>
+          <button id="btn-pause-settings" class="btn">SETTINGS</button>
+          <button id="btn-restart" class="btn">RESTART MISSION</button>
+          <button id="btn-quit" class="btn">MAIN MENU</button>
+        </div>
+        <div id="resume-note" class="note"></div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div id="settings" class="screen hidden">
+      <div class="panel settings-panel">
+        <div class="panel-head">SETTINGS</div>
+        <label class="row"><span>Mouse sensitivity</span><input id="set-sens" type="range" min="0.2" max="3" step="0.05" /><output id="out-sens"></output></label>
+        <label class="row"><span>Field of view</span><input id="set-fov" type="range" min="60" max="100" step="1" /><output id="out-fov"></output></label>
+        <label class="row"><span>Master volume</span><input id="set-vol" type="range" min="0" max="1" step="0.05" /><output id="out-vol"></output></label>
+        <label class="row"><span>Graphics quality</span>
+          <select id="set-quality"><option value="low">Low (no shadows / bloom)</option><option value="medium">Medium</option><option value="high">High</option></select><output></output></label>
+        <label class="row"><span>Render scale</span><input id="set-scale" type="range" min="0.5" max="1" step="0.05" /><output id="out-scale"></output></label>
+        <label class="row check"><span>Reduced motion</span><input id="set-motion" type="checkbox" /><output></output></label>
+        <label class="row check"><span>Show FPS</span><input id="set-fps" type="checkbox" /><output></output></label>
+        <div class="menu-buttons"><button id="btn-settings-back" class="btn primary">BACK</button></div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="results" class="screen hidden">
+      <div class="panel results-panel">
+        <div id="result-kicker" class="title-kicker">MISSION REPORT</div>
+        <h2 id="result-title">EXTRACTED</h2>
+        <div id="result-sub" class="result-sub"></div>
+        <div class="stats-grid" id="result-stats"></div>
+        <div id="result-best" class="best-run"></div>
+        <div class="menu-buttons">
+          <button id="btn-again" class="btn primary">REDEPLOY</button>
+          <button id="btn-menu" class="btn">MAIN MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="fade"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
