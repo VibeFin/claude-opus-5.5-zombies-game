@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Dead Signal: Exclusion Zone</title>
     <meta name="description" content="A first-person extraction survival shooter set in a quarantined industrial district." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23111'/%3E%3Cpath d='M16 4 L28 26 H4 Z' fill='none' stroke='%23e8c35a' stroke-width='3'/%3E%3Ccircle cx='16' cy='20' r='2.5' fill='%23e8c35a'/%3E%3C/svg%3E" />
@@ -62,6 +65,17 @@
             <span>Esc</span><span>Pause</span>
           </div>
         </div>
+        <div class="controls-card touch-only">
+          <div class="card-head">TOUCH CONTROLS</div>
+          <div class="controls-grid">
+            <span>Left stick</span><span>Move · push fully to sprint</span>
+            <span>Drag right</span><span>Look / aim</span>
+            <span>FIRE</span><span>Hold to shoot · drag to aim while firing</span>
+            <span>ADS</span><span>Toggle aim</span>
+            <span>USE</span><span>Interact when shown</span>
+            <span>WPN</span><span>Switch weapon</span>
+          </div>
+        </div>
         <div class="controls-card">
           <div class="card-head">MISSION</div>
           <ol class="mission-steps">
@@ -119,7 +133,7 @@
       <div id="station" class="station hidden">
         <div class="station-head" id="station-title">QUARTERMASTER</div>
         <div id="station-items"></div>
-        <div class="station-foot">Press the number key to buy · <kbd>E</kbd> close</div>
+        <div class="station-foot">Tap an item or press its number key · <kbd>E</kbd> close</div>
       </div>
       <div id="controls-hint" class="controls-hint">
         <div><kbd>WASD</kbd> move <kbd>Shift</kbd> sprint <kbd>C</kbd> crouch <kbd>Space</kbd> jump</div>
@@ -186,6 +200,7 @@
     </div>
 
     <div id="fade"></div>
+    <div id="touch-ui" class="hidden"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

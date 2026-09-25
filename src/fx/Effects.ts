@@ -151,6 +151,17 @@ export class Effects {
   private tmpV = new THREE.Vector3();
   private up = new THREE.Vector3(0, 0, 1);
   shake = 0;
+  /** 0..1 particle budget multiplier for low-power devices. */
+  private budget = 1;
+
+  /** Scales particle spawn counts (adaptive / quality driven). */
+  setBudget(m: number): void {
+    this.budget = Math.max(0.2, Math.min(1, m));
+  }
+
+  private n(base: number): number {
+    return Math.max(1, Math.round(base * this.budget));
+  }
 
   constructor(tex: TextureLib) {
     const per = Math.floor(PERF.maxParticles / 3);
@@ -210,11 +221,11 @@ export class Effects {
   }
 
   impact(x: number, y: number, z: number, nx: number, ny: number, nz: number, surface: Surface): void {
-    const sparks = surface === 'metal' ? 7 : 2;
+    const sparks = surface === 'metal' ? this.n(7) : this.n(2);
     for (let i = 0; i < sparks; i++) {
       this.additive.spawn({ x, y, z, vx: nx * 3 + rand(-3, 3), vy: ny * 3 + rand(0, 3.5), vz: nz * 3 + rand(-3, 3), life: rand(0.15, 0.35), size0: 0.05, size1: 0.02, alpha: 1, r: 1, g: 0.75, b: 0.4, grav: 12, drag: 1, rot: 0, spin: 0 });
     }
-    const dust = surface === 'metal' ? 1 : 3;
+    const dust = surface === 'metal' ? 1 : this.n(3);
     const col = surface === 'wood' ? [0.55, 0.45, 0.35] : surface === 'dirt' ? [0.45, 0.4, 0.33] : [0.62, 0.62, 0.6];
     for (let i = 0; i < dust; i++) {
       this.smoke.spawn({ x: x + nx * 0.05, y: y + ny * 0.05, z: z + nz * 0.05, vx: nx * rand(0.5, 1.6) + rand(-0.3, 0.3), vy: ny * rand(0.5, 1.6) + rand(0, 0.5), vz: nz * rand(0.5, 1.6) + rand(-0.3, 0.3), life: rand(0.5, 0.9), size0: 0.12, size1: 0.6, alpha: 0.4, r: col[0], g: col[1], b: col[2], grav: 0.3, drag: 3, rot: rand(0, 6), spin: rand(-1, 1) });
@@ -236,11 +247,11 @@ export class Effects {
   }
 
   bloodHit(x: number, y: number, z: number, dx: number, dz: number, head: boolean): void {
-    const n = head ? 7 : 4;
+    const n = this.n(head ? 7 : 4);
     for (let i = 0; i < n; i++) {
       this.blood.spawn({ x, y, z, vx: dx * rand(0.5, 2.5) + rand(-0.8, 0.8), vy: rand(-0.2, 1.4), vz: dz * rand(0.5, 2.5) + rand(-0.8, 0.8), life: rand(0.3, 0.6), size0: head ? 0.25 : 0.18, size1: head ? 0.9 : 0.55, alpha: 0.75, r: 0.35, g: 0.03, b: 0.02, grav: 3, drag: 3, rot: rand(0, 6), spin: 0 });
     }
-    for (let i = 0; i < (head ? 5 : 2); i++) {
+    for (let i = 0; i < this.n(head ? 5 : 2); i++) {
       this.blood.spawn({ x, y, z, vx: dx * 3 + rand(-1, 1), vy: rand(1, 3), vz: dz * 3 + rand(-1, 1), life: 0.7, size0: 0.05, size1: 0.04, alpha: 1, r: 0.3, g: 0.02, b: 0.02, grav: 14, drag: 0.5, rot: 0, spin: 0 });
     }
   }
@@ -258,15 +269,15 @@ export class Effects {
     this.blastLight.position.set(x, y + 1, z);
     this.blastLight.intensity = 60;
     this.blastT = 0.35;
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < this.n(26); i++) {
       const a = rand(0, Math.PI * 2), e = rand(0.1, 1.2), sp = rand(2, 9);
       this.additive.spawn({ x, y: y + 0.3, z, vx: Math.cos(a) * Math.cos(e) * sp, vy: Math.sin(e) * sp, vz: Math.sin(a) * Math.cos(e) * sp, life: rand(0.25, 0.55), size0: rand(1.2, 2.2), size1: 0.3, alpha: 0.9, r: 1, g: rand(0.45, 0.7), b: 0.15, grav: -1, drag: 4, rot: rand(0, 6), spin: rand(-2, 2) });
     }
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < this.n(30); i++) {
       const a = rand(0, Math.PI * 2), sp = rand(6, 16);
       this.additive.spawn({ x, y: y + 0.2, z, vx: Math.cos(a) * sp, vy: rand(3, 10), vz: Math.sin(a) * sp, life: rand(0.4, 0.9), size0: 0.08, size1: 0.03, alpha: 1, r: 1, g: 0.8, b: 0.4, grav: 14, drag: 0.8, rot: 0, spin: 0 });
     }
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < this.n(16); i++) {
       const a = rand(0, Math.PI * 2), sp = rand(0.5, 3);
       this.smoke.spawn({ x: x + rand(-0.5, 0.5), y: y + rand(0.2, 1.2), z: z + rand(-0.5, 0.5), vx: Math.cos(a) * sp, vy: rand(0.8, 2.2), vz: Math.sin(a) * sp, life: rand(2, 3.5), size0: 1.2, size1: 4.5, alpha: 0.5, r: 0.2, g: 0.2, b: 0.2, grav: -0.2, drag: 1.2, rot: rand(0, 6), spin: rand(-0.4, 0.4) });
     }
@@ -286,13 +297,13 @@ export class Effects {
   }
 
   sparkBurst(x: number, y: number, z: number, n: number, color: [number, number, number]): void {
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < this.n(n); i++) {
       this.additive.spawn({ x, y, z, vx: rand(-3, 3), vy: rand(0, 4), vz: rand(-3, 3), life: rand(0.2, 0.5), size0: 0.1, size1: 0.02, alpha: 1, r: color[0], g: color[1], b: color[2], grav: 9, drag: 1, rot: 0, spin: 0 });
     }
   }
 
   deathPuff(x: number, y: number, z: number): void {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < this.n(5); i++) {
       this.smoke.spawn({ x: x + rand(-0.3, 0.3), y: y + rand(0, 0.5), z: z + rand(-0.3, 0.3), vx: rand(-0.4, 0.4), vy: rand(0.2, 0.6), vz: rand(-0.4, 0.4), life: rand(0.8, 1.4), size0: 0.4, size1: 1.4, alpha: 0.3, r: 0.35, g: 0.38, b: 0.3, grav: 0, drag: 1, rot: rand(0, 6), spin: 0.3 });
     }
   }

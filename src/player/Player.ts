@@ -70,12 +70,10 @@ export class Player {
       } else this.crouched = true;
     }
     // Sprinting while crouched stands up if there is room.
-    let fwd = 0, strafe = 0;
-    if (input.isHeld('forward')) fwd += 1;
-    if (input.isHeld('back')) fwd -= 1;
-    if (input.isHeld('right')) strafe += 1;
-    if (input.isHeld('left')) strafe -= 1;
-    const wantSprint = input.isHeld('sprint') && fwd > 0 && opts.canSprintExtra;
+    const axis = input.moveAxis();
+    const fwd = axis.y, strafe = axis.x;
+    const touchSprint = input.touchMove.y > 0.85;
+    const wantSprint = (input.isHeld('sprint') || touchSprint) && fwd > 0.1 && opts.canSprintExtra;
     if (wantSprint && this.crouched && !world.overlaps(this.pos.x, this.pos.y + 0.02, this.pos.z, PLAYER.radius, PLAYER.standHeight - 0.02)) this.crouched = false;
     this.sprinting = wantSprint && !this.crouched && this.grounded && canSprint(v) && !this.aiming;
     if (this.sprinting && !canSprint(v)) this.sprinting = false;
@@ -96,25 +94,26 @@ export class Player {
     if (fwd < 0) maxSpeed *= 0.85;
     maxSpeed *= opts.speedMult;
     const len = Math.hypot(fwd, strafe);
+    const mag = Math.min(1, len);
     let wx = 0, wz = 0;
-    if (len > 0) {
-      // Normalised so diagonals are not faster.
-      const f = fwd / len, s = strafe / len;
+    if (len > 1e-4) {
+      // Normalised so diagonals are not faster; magnitude preserved for analog sticks.
+      const f = fwd / Math.max(1, len), s = strafe / Math.max(1, len);
       const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
       // Forward is -Z at yaw 0.
       wx = -sin * f + cos * s;
       wz = -cos * f - sin * s;
     }
     const accel = this.grounded ? PLAYER.groundAccel : PLAYER.airAccel;
-    const tx = wx * maxSpeed, tz = wz * maxSpeed;
-    if (this.grounded && len === 0) {
+    const tx = wx * maxSpeed * mag, tz = wz * maxSpeed * mag;
+    if (this.grounded && mag < 0.05) {
       const drop = Math.max(0, 1 - PLAYER.friction * dt);
       this.vel.x *= drop;
       this.vel.z *= drop;
     }
     const dvx = tx - this.vel.x, dvz = tz - this.vel.z;
     const dl = Math.hypot(dvx, dvz);
-    if (dl > 0 && (len > 0 || this.grounded)) {
+    if (dl > 0 && (mag > 0.05 || this.grounded)) {
       const step = Math.min(dl, accel * dt);
       this.vel.x += (dvx / dl) * step;
       this.vel.z += (dvz / dl) * step;

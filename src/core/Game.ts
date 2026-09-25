@@ -19,6 +19,8 @@ import { TextureLib } from '../render/textures';
 import { Hud, type ContractView, type StationItemView, type WaypointView } from '../ui/Hud';
 import { MapRenderer, type MapMarker, type MapState } from '../ui/MapRenderer';
 import { Menus } from '../ui/Menus';
+import { TouchControls } from '../ui/TouchControls';
+import { adaptRenderScale, defaultMobileQuality, isTouchDevice } from '../ui/touchUtils';
 import { Grenades } from '../weapons/Grenades';
 import { ViewModel } from '../weapons/ViewModel';
 import { WeaponSystem } from '../weapons/WeaponSystem';
@@ -59,6 +61,10 @@ export class Game {
   mission!: Mission;
   loadout!: Loadout;
   settings: Settings;
+  readonly isTouch: boolean;
+  touch!: TouchControls;
+  private adaptFrames = 0;
+  private adaptTime = 0;
   private acc = 0;
   private last = 0;
   private simTime = 0;
@@ -89,6 +95,17 @@ export class Game {
 
   constructor(container: HTMLElement, onProgress: (p: number, label: string) => void) {
     this.settings = loadSettings();
+    this.isTouch = isTouchDevice();
+    // First-run mobile defaults: favour frame rate until the user chooses otherwise.
+    if (this.isTouch) {
+      let firstRun = false;
+      try { firstRun = window.localStorage.getItem('deadsignal.settings.v1') === null; } catch { firstRun = true; }
+      if (firstRun) {
+        const m = defaultMobileQuality();
+        this.settings.quality = m.quality;
+        this.settings.renderScale = m.renderScale;
+      }
+    }
     this.renderer = new Renderer(container);
     onProgress(0.15, 'GENERATING SURFACES…');
     this.tex.build();
@@ -124,15 +141,22 @@ export class Game {
       onShot: () => { this.mission.stats.shots++; },
     });
     this.menus = new Menus(this);
+    this.touch = new TouchControls(this.input, {
+      onPause: () => this.pause(),
+      onBuy: (idx) => this.tryBuy(idx),
+    });
+    if (this.isTouch) this.input.setTouchMode(true);
     this.applySettings();
     this.resetMission();
     this.input.onLockChange = (locked) => this.onLockChange(locked);
-    this.input.onFocusLost = () => { if (this.state === 'playing') this.pause(); };
+    this.input.onFocusLost = () => { if (this.state === 'playing' && !this.isTouch) this.pause(); };
     this.input.onEscape = () => {
       if (this.mapOpen) { this.mapOpen = false; this.menus.showMap(false); }
-      if (this.state === 'playing' && this.input.virtualLock) this.pause();
+      if (this.state === 'playing' && (this.input.virtualLock || this.isTouch)) this.pause();
     };
     window.addEventListener('resize', () => this.onResize());
+    window.addEventListener('orientationchange', () => window.setTimeout(() => this.onResize(), 100));
+    try { (window.visualViewport as VisualViewport | null)?.addEventListener('resize', () => this.onResize()); } catch { /* noop */ }
     this.onResize();
     onProgress(1, 'READY');
     this.last = performance.now();
@@ -193,6 +217,11 @@ export class Game {
     this.hud.show(true);
     this.renderer.showViewModel(true);
     this.last = performance.now();
+    this.touch.setVisible(true);
+    if (this.isTouch) {
+      this.input.setTouchMode(true);
+      return;
+    }
     const ok = await this.input.requestLock();
     if (!ok && !this.input.virtualLock) this.pause('Click RESUME to lock the mouse and continue.');
   }
@@ -203,6 +232,7 @@ export class Game {
     this.input.clear();
     this.input.releaseLock();
     this.audio.suspend();
+    this.touch.setVisible(false);
     this.menus.showScreen('pause', note);
   }
 
@@ -210,6 +240,14 @@ export class Game {
     if (this.state !== 'paused') return;
     this.audio.init();
     this.audio.resume();
+    if (this.isTouch) {
+      this.state = 'playing';
+      this.menus.showScreen('none');
+      this.touch.setVisible(true);
+      this.last = performance.now();
+      this.acc = 0;
+      return;
+    }
     const ok = await this.input.requestLock();
     if (!ok && !this.input.virtualLock) {
       this.menus.setResumeNote('The browser blocked the mouse lock — wait a moment and click RESUME again.');
@@ -219,6 +257,7 @@ export class Game {
   }
 
   private onLockChange(locked: boolean): void {
+    if (this.isTouch) return;
     if (locked && this.state === 'paused') {
       this.state = 'playing';
       this.menus.showScreen('none');
@@ -235,6 +274,7 @@ export class Game {
     this.resetMission();
     this.state = 'title';
     this.hud.show(false);
+    this.touch.setVisible(false);
     this.renderer.showViewModel(false);
     this.audio.resume();
     this.menus.showScreen('title');
@@ -249,8 +289,11 @@ export class Game {
   applySettings(): void {
     const s = this.settings;
     this.renderer.setQuality(s.quality, s.renderScale);
+    this.fx.setBudget(s.quality === 'low' ? 0.45 : s.quality === 'medium' ? 0.7 : 1);
     this.audio.setVolume(s.volume);
     saveSettings(s);
+    this.adaptFrames = 0;
+    this.adaptTime = 0;
     this.onResize();
   }
 
@@ -316,6 +359,21 @@ export class Game {
       this.fpsText = `${fps.toFixed(0)} FPS · ${(1000 / fps).toFixed(1)} ms · ${this.enemies.aliveCount} infected`;
       this.fpsFrames = 0;
       this.fpsTime = 0;
+    }
+    // Adaptive resolution on touch devices: ease the render scale toward 60fps.
+    if (this.isTouch && this.state === 'playing' && dt > 0) {
+      this.adaptFrames++;
+      this.adaptTime += dt;
+      if (this.adaptTime >= 2.5) {
+        const avgFps = this.adaptFrames / this.adaptTime;
+        const next = adaptRenderScale(this.settings.renderScale, avgFps);
+        this.adaptFrames = 0;
+        this.adaptTime = 0;
+        if (next !== this.settings.renderScale) {
+          this.settings.renderScale = next;
+          this.applySettings();
+        }
+      }
     }
   }
 
@@ -567,11 +625,12 @@ export class Game {
     };
     if (this.station === 'buy') {
       const hasShotgun = l.slots.some((s) => s?.id === 'shotgun');
+      const plateHint = this.isTouch ? 'PLATE button' : 'Q';
       return [
-        mk('ammo', '3', 'AMMO RESUPPLY', 'Refill reserves for both weapons'),
-        mk('plate', '4', 'ARMOR PLATE', `Carry up to ${PLAYER.maxPlateInventory} · apply with Q`),
-        mk('grenade', '5', 'FRAG GRENADE', `Carry up to ${PLAYER.maxGrenades}`),
-        mk('shotgun', '6', WEAPONS.shotgun.name, hasShotgun ? 'Already equipped' : l.slots[1] ? 'Pump shotgun · replaces held weapon' : 'Pump shotgun · 9 pellets'),
+        mk('ammo', this.isTouch ? 'TAP' : '3', 'AMMO RESUPPLY', 'Refill reserves for both weapons'),
+        mk('plate', this.isTouch ? 'TAP' : '4', 'ARMOR PLATE', `Carry up to ${PLAYER.maxPlateInventory} · apply with ${plateHint}`),
+        mk('grenade', this.isTouch ? 'TAP' : '5', 'FRAG GRENADE', `Carry up to ${PLAYER.maxGrenades}`),
+        mk('shotgun', this.isTouch ? 'TAP' : '6', WEAPONS.shotgun.name, hasShotgun ? 'Already equipped' : l.slots[1] ? 'Pump shotgun · replaces held weapon' : 'Pump shotgun · 9 pellets'),
       ];
     }
     const name = (i: 0 | 1) => {
@@ -585,7 +644,7 @@ export class Game {
       const c = upgradeCost(s);
       return c === null ? 'Fully upgraded' : `→ ${s.tier === 0 ? 'TIER I' : 'TIER II'}: more damage, bigger mags, faster reloads`;
     };
-    return [mk('upgrade0', '3', name(0), desc(0)), mk('upgrade1', '4', name(1), desc(1))];
+    return [mk('upgrade0', this.isTouch ? 'TAP' : '3', name(0), desc(0)), mk('upgrade1', this.isTouch ? 'TAP' : '4', name(1), desc(1))];
   }
 
   private updateStation(): void {
@@ -598,32 +657,47 @@ export class Game {
     const keys = ['buy3', 'buy4', 'buy5', 'buy6', 'buy7'] as const;
     items.forEach((it, i) => {
       if (!this.input.consume(keys[i])) return;
-      const before = this.loadout.slots.map((s) => s?.id);
-      const r = applyPurchase(this.loadout, this.player.vitals, it.id);
-      if (r.ok) {
-        this.hud.flashStation(i, true);
-        if (it.id === 'upgrade0' || it.id === 'upgrade1') {
-          const slot = it.id === 'upgrade0' ? 0 : 1;
-          const w = this.loadout.slots[slot]!;
-          this.vm.setTier(w.id, w.tier);
-          this.audio.ui('upgrade');
-          this.fx.sparkBurst(this.player.pos.x, 1.2, this.player.pos.z, 20, w.tier === 1 ? [0.4, 0.8, 1.6] : [1.6, 0.5, 0.2]);
-          this.hud.toast(`${WEAPONS[w.id].name} UPGRADED`, 'big', w.tier === 1 ? 'TIER I · damage x1.65 · +25% magazine' : 'TIER II · damage x2.5 · +50% magazine', 3);
-        } else {
-          this.audio.ui('buy');
-          if (it.id === 'shotgun') {
-            const replaced = before.find((id) => id && !this.loadout.slots.some((s) => s?.id === id));
-            this.weapons.syncModel();
-            this.hud.toast(`${WEAPONS.shotgun.name} ACQUIRED`, 'good', replaced ? `Replaced ${WEAPONS[replaced as WeaponId].shortName}` : '', 2.5);
-          }
-        }
-      } else {
-        this.hud.flashStation(i, false);
-        this.audio.ui('deny');
-        this.hud.toast(r.reason ?? 'UNAVAILABLE', 'bad', '', 1.2);
-      }
+      this.buyItem(it.id, i);
     });
     this.hud.setStation(items.map((i) => i.view), this.station === 'buy' ? 'QUARTERMASTER STATION' : 'ARMORY UPGRADE BENCH');
+  }
+
+  /** Touch tap (or any direct index) purchase at the open station. */
+  tryBuy(idx: number): void {
+    if (!this.station || this.state !== 'playing') return;
+    const items = this.stationItems();
+    const it = items[idx];
+    if (!it) return;
+    this.buyItem(it.id, idx);
+    // Refresh the list immediately so price/enabled states update on touch.
+    this.hud.setStation(this.stationItems().map((i) => i.view), this.station === 'buy' ? 'QUARTERMASTER STATION' : 'ARMORY UPGRADE BENCH');
+  }
+
+  private buyItem(id: PurchaseId, i: number): void {
+    const before = this.loadout.slots.map((s) => s?.id);
+    const r = applyPurchase(this.loadout, this.player.vitals, id);
+    if (r.ok) {
+      this.hud.flashStation(i, true);
+      if (id === 'upgrade0' || id === 'upgrade1') {
+        const slot = id === 'upgrade0' ? 0 : 1;
+        const w = this.loadout.slots[slot]!;
+        this.vm.setTier(w.id, w.tier);
+        this.audio.ui('upgrade');
+        this.fx.sparkBurst(this.player.pos.x, 1.2, this.player.pos.z, 20, w.tier === 1 ? [0.4, 0.8, 1.6] : [1.6, 0.5, 0.2]);
+        this.hud.toast(`${WEAPONS[w.id].name} UPGRADED`, 'big', w.tier === 1 ? 'TIER I · damage x1.65 · +25% magazine' : 'TIER II · damage x2.5 · +50% magazine', 3);
+      } else {
+        this.audio.ui('buy');
+        if (id === 'shotgun') {
+          const replaced = before.find((rid) => rid && !this.loadout.slots.some((s) => s?.id === rid));
+          this.weapons.syncModel();
+          this.hud.toast(`${WEAPONS.shotgun.name} ACQUIRED`, 'good', replaced ? `Replaced ${WEAPONS[replaced as WeaponId].shortName}` : '', 2.5);
+        }
+      }
+    } else {
+      this.hud.flashStation(i, false);
+      this.audio.ui('deny');
+      this.hud.toast(r.reason ?? 'UNAVAILABLE', 'bad', '', 1.2);
+    }
   }
 
   // ------------------------------------------------------------------------------------------
@@ -686,7 +760,7 @@ export class Game {
       case 'heliLanded':
         if (!this.landedAnnounced) {
           this.landedAnnounced = true;
-          this.hud.toast('RAVEN 2-1 ON THE GROUND', 'big', 'Get to the helicopter door and press E', 4);
+          this.hud.toast('RAVEN 2-1 ON THE GROUND', 'big', `Get to the helicopter door and ${this.isTouch ? 'tap USE' : 'press E'}`, 4);
           this.audio.ui('radio');
         }
         break;
@@ -704,6 +778,7 @@ export class Game {
     this.station = null;
     this.hud.setStation(null, '');
     this.input.releaseLock();
+    this.touch.setVisible(false);
     this.renderer.showViewModel(false);
     this.hud.centerMessage('K.I.A.');
     this.audio.hurt(true);
@@ -714,6 +789,7 @@ export class Game {
     this.state = 'dying';
     this.dyingT = 0;
     this.input.releaseLock();
+    this.touch.setVisible(false);
     this.renderer.showViewModel(false);
     this.hud.centerMessage('ZONE LOST');
   }
@@ -724,6 +800,7 @@ export class Game {
     this.extractT = 0;
     this.input.releaseLock();
     this.hud.show(false);
+    this.touch.setVisible(false);
     this.renderer.showViewModel(false);
     this.audio.ui('complete');
   }
@@ -732,6 +809,7 @@ export class Game {
     this.resultShown = true;
     this.state = 'results';
     this.hud.show(false);
+    this.touch.setVisible(false);
     this.audio.stopHeli();
     const st = this.mission.stats;
     let record = false;
@@ -875,7 +953,7 @@ export class Game {
     const d = m.defense;
     contracts.push({
       title: 'DEFEND UPLINK RELAY', tag: d.status === 'complete' ? 'COMPLETE' : 'CONTRACT',
-      sub: d.status === 'inactive' ? 'Activate the relay at Kessler Depot [E]' : d.status === 'complete' ? 'Uplink restored' : d.inZone ? `Transmitting… ${Math.round(d.progress * 100)}%` : 'RETURN TO THE RELAY ZONE',
+      sub: d.status === 'inactive' ? `Activate the relay at Kessler Depot ${this.isTouch ? '[USE]' : '[E]'}` : d.status === 'complete' ? 'Uplink restored' : d.inZone ? `Transmitting… ${Math.round(d.progress * 100)}%` : 'RETURN TO THE RELAY ZONE',
       warn: d.status === 'active' && !d.inZone, progress: d.status === 'active' ? d.progress : undefined,
       state: d.status === 'complete' ? 'done' : 'active',
     });
@@ -886,24 +964,29 @@ export class Game {
     });
     let exSub = 'Complete both contracts to unlock';
     let exState: ContractView['state'] = 'locked';
-    if (ex.state === 'available') { exSub = 'Signal RAVEN 2-1 from the LZ radio [E]'; exState = 'active'; }
+    if (ex.state === 'available') { exSub = `Signal RAVEN 2-1 from the LZ radio ${this.isTouch ? '[USE]' : '[E]'}`; exState = 'active'; }
     else if (ex.state === 'called') { exSub = `Helicopter ETA ${Math.ceil(ex.countdown)}s · hold the LZ`; exState = 'active'; }
-    else if (ex.state === 'landed') { exSub = 'BOARD THE HELICOPTER [E]'; exState = 'active'; }
+    else if (ex.state === 'landed') { exSub = `BOARD THE HELICOPTER ${this.isTouch ? '[USE]' : '[E]'}`; exState = 'active'; }
     contracts.push({ title: 'EXTRACTION', tag: ex.state === 'locked' ? 'LOCKED' : 'EXFIL', sub: exSub, state: exState,
       progress: ex.state === 'called' ? 1 - ex.countdown / MISSION.extractionCountdown : undefined });
 
-    // Prompt
+    // Prompt (touch shows TAP instead of key hints; the USE button mirrors it).
+    const key = this.isTouch ? 'TAP' : '<kbd>E</kbd>';
     let prompt: string | null = null;
     const it = this.currentInteraction;
     if (it) {
       switch (it.kind) {
-        case 'crate': prompt = '<kbd>E</kbd> Search supply cache'; break;
-        case 'station': prompt = this.station ? null : it.station === 'buy' ? '<kbd>E</kbd> Open Quartermaster station' : '<kbd>E</kbd> Open Armory upgrade bench'; break;
-        case 'transmitter': prompt = '<kbd>E</kbd> Activate uplink relay <span class="cost">CONTRACT</span>'; break;
-        case 'radio': prompt = ex.state === 'available' ? '<kbd>E</kbd> Signal extraction <span class="cost">STARTS FINAL HORDE</span>'
+        case 'crate': prompt = `${key} Search supply cache`; break;
+        case 'station': prompt = this.station ? null : it.station === 'buy' ? `${key} Open Quartermaster station` : `${key} Open Armory upgrade bench`; break;
+        case 'transmitter': prompt = `${key} Activate uplink relay <span class="cost">CONTRACT</span>`; break;
+        case 'radio': prompt = ex.state === 'available' ? `${key} Signal extraction <span class="cost">STARTS FINAL HORDE</span>`
           : ex.state === 'locked' ? 'Extraction radio <span class="denied">COMPLETE BOTH CONTRACTS</span>' : null; break;
-        case 'board': prompt = '<kbd>E</kbd> Board the helicopter'; break;
+        case 'board': prompt = `${key} Board the helicopter`; break;
       }
+    }
+    if (this.isTouch) {
+      this.touch.setInteractAvailable(!!prompt && !this.station, 'USE');
+      this.touch.syncAim();
     }
     const other = this.loadout.slots[this.loadout.active === 0 ? 1 : 0];
     const eliteZ = this.enemies.elite;

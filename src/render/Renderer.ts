@@ -62,10 +62,13 @@ export class Renderer {
   readonly grade: ShaderPass;
   private quality: Quality = 'high';
   private renderScale = 1;
+  private readonly isTouch: boolean;
   private sky: THREE.Mesh;
 
   constructor(container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', stencil: false });
+    this.isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    // MSAA is expensive on mobile GPUs; the grade pass + lower DPR hides aliasing acceptably.
+    this.renderer = new THREE.WebGLRenderer({ antialias: !this.isTouch, powerPreference: 'high-performance', stencil: false });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
@@ -194,7 +197,10 @@ export class Renderer {
     this.quality = q;
     this.renderScale = renderScale;
     const dpr = window.devicePixelRatio || 1;
-    const cap = q === 'high' ? 2 : q === 'medium' ? 1.25 : 1;
+    // Mobile GPUs are fill-rate bound: cap DPR harder than desktop.
+    const cap = this.isTouch
+      ? q === 'high' ? 1.5 : q === 'medium' ? 1.15 : 1
+      : q === 'high' ? 2 : q === 'medium' ? 1.25 : 1;
     this.renderer.setPixelRatio(Math.min(dpr, cap) * renderScale);
     const shadows = q !== 'low';
     if (this.renderer.shadowMap.enabled !== shadows) {
@@ -205,13 +211,13 @@ export class Renderer {
         (Array.isArray(m) ? m : [m]).forEach((mm) => { mm.needsUpdate = true; });
       });
     }
-    const size = q === 'high' ? 2048 : 1024;
+    const size = q === 'high' ? (this.isTouch ? 1024 : 2048) : q === 'medium' ? (this.isTouch ? 512 : 1024) : 512;
     if (this.sun.shadow.mapSize.x !== size) {
       this.sun.shadow.mapSize.set(size, size);
       this.sun.shadow.map?.dispose();
       this.sun.shadow.map = null;
     }
-    this.bloom.enabled = q !== 'low';
+    this.bloom.enabled = this.isTouch ? q === 'high' : q !== 'low';
     this.resize();
   }
 

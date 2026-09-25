@@ -18,11 +18,12 @@ function webglAvailable(): boolean {
 }
 
 async function boot(): Promise<void> {
+  const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   if (!webglAvailable()) {
     fail('This game needs WebGL, which is disabled or unsupported in this browser. Enable hardware acceleration or try a current version of Chrome, Edge or Firefox on a desktop computer.');
     return;
   }
-  if (!('requestPointerLock' in HTMLElement.prototype)) {
+  if (!touch && !('requestPointerLock' in HTMLElement.prototype)) {
     fail('This browser does not support mouse pointer lock, which is required for first-person controls. Please use a desktop browser.');
     return;
   }

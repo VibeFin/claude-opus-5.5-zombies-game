@@ -28,6 +28,10 @@ export class Input {
   locked = false;
   /** Development automation: behave as if pointer-locked (no real lock available). */
   virtualLock = false;
+  /** Touch controls active (mobile): no pointer lock required. */
+  touchMode = false;
+  /** Analog move vector from the virtual joystick: x = strafe (-1..1), y = forward (-1..1). */
+  touchMove = { x: 0, y: 0 };
   onLockChange: (locked: boolean) => void = () => {};
   onFocusLost: () => void = () => {};
   onEscape: () => void = () => {};
@@ -47,11 +51,79 @@ export class Input {
   }
 
   get active(): boolean {
-    return this.locked || this.virtualLock;
+    return this.locked || this.virtualLock || this.touchMode;
+  }
+
+  /** Touch device drives the game without pointer lock. */
+  setTouchMode(on: boolean): void {
+    this.touchMode = on;
+    if (on) this.fireBlocked = false;
+  }
+
+  /** Analog joystick state, clamped to unit length. */
+  setTouchMove(x: number, y: number): void {
+    const len = Math.hypot(x, y);
+    if (len > 1) { x /= len; y /= len; }
+    this.touchMove.x = x;
+    this.touchMove.y = y;
+  }
+
+  /** Combined keyboard + joystick axis: x = strafe, y = forward. */
+  moveAxis(): { x: number; y: number } {
+    let fwd = 0, strafe = 0;
+    if (this.held.has('forward')) fwd += 1;
+    if (this.held.has('back')) fwd -= 1;
+    if (this.held.has('right')) strafe += 1;
+    if (this.held.has('left')) strafe -= 1;
+    fwd += this.touchMove.y;
+    strafe += this.touchMove.x;
+    return { x: Math.max(-1, Math.min(1, strafe)), y: Math.max(-1, Math.min(1, fwd)) };
+  }
+
+  /** Touch look feeds the same per-frame deltas as the mouse. */
+  addTouchLook(dx: number, dy: number): void {
+    if (!this.active) return;
+    this.mouseDX += Math.max(-300, Math.min(300, dx));
+    this.mouseDY += Math.max(-300, Math.min(300, dy));
+  }
+
+  setTouchFire(down: boolean): void {
+    if (down) {
+      if (!this.active) return;
+      this.fireHeld = true;
+      if (!this.fireBlocked) this.firePressed = true;
+    } else {
+      this.fireHeld = false;
+      this.fireBlocked = false;
+    }
+  }
+
+  setTouchAim(down: boolean): void {
+    this.aimHeld = down && this.active;
+  }
+
+  /** Edge-triggered press from a touch button. */
+  press(a: Action): void {
+    if (!this.active) return;
+    if (!this.held.has(a)) this.pressed.add(a);
+    this.held.add(a);
+  }
+
+  release(a: Action): void {
+    this.held.delete(a);
+  }
+
+  /** Toggle a held action (sprint lock, crouch handled via press). */
+  toggleHold(a: Action): boolean {
+    if (!this.active) return false;
+    if (this.held.has(a)) { this.held.delete(a); return false; }
+    this.pressed.add(a);
+    this.held.add(a);
+    return true;
   }
 
   async requestLock(): Promise<boolean> {
-    if (this.virtualLock) return true;
+    if (this.virtualLock || this.touchMode) return true;
     try {
       const r = this.el.requestPointerLock({ unadjustedMovement: true } as never) as unknown as Promise<void> | undefined;
       if (r && typeof (r as Promise<void>).then === 'function') await r;
@@ -99,6 +171,8 @@ export class Input {
   clear(blockFire = true): void {
     this.held.clear();
     this.pressed.clear();
+    this.touchMove.x = 0;
+    this.touchMove.y = 0;
     this.mouseDX = this.mouseDY = this.wheel = 0;
     this.fireHeld = this.firePressed = this.aimHeld = false;
     this.fireBlocked = blockFire;
